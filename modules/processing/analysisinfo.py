@@ -1,15 +1,16 @@
-# Copyright (C) 2010-2014 Cuckoo Foundation.
+# Copyright (C) 2010-2013 Claudio Guarnieri.
+# Copyright (C) 2014-2016 Cuckoo Foundation.
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
-import time
-import json
+import os
 import logging
-from datetime import datetime
 
-from lib.cuckoo.core.database import Database
+from lib.cuckoo.core.database import Database, Task
+from lib.cuckoo.common.objects import File
 from lib.cuckoo.common.abstracts import Processing
 from lib.cuckoo.common.constants import CUCKOO_VERSION
+from lib.cuckoo.common.utils import json_decode
 
 log = logging.getLogger(__name__)
 
@@ -22,38 +23,71 @@ class AnalysisInfo(Processing):
         """
         self.key = "info"
 
-        try:
-            started = time.strptime(self.task["started_on"], "%Y-%m-%d %H:%M:%S")
-            started = datetime.fromtimestamp(time.mktime(started))
-            ended = time.strptime(self.task["completed_on"], "%Y-%m-%d %H:%M:%S")
-            ended = datetime.fromtimestamp(time.mktime(ended))
-        except:
-            log.critical("Failed to get start/end time from Task.")
-            duration = -1
-        else:
-            duration = (ended - started).seconds
-
         db = Database()
+        dbtask = db.view_task(self.task["id"], details=True)
 
-        # Fetch sqlalchemy object.
-        task = db.view_task(self.task["id"], details=True)
-
-        if task and task.guest:
-            # Get machine description ad json.
-            machine = task.guest.to_dict()
-            # Remove useless task_id.
-            del(machine["task_id"])
-            # Save.
-            self.task["machine"] = machine
+        if dbtask:
+            task = dbtask.to_dict()
+        else:
+            # task is gone from the database
+            if os.path.isfile(self.taskinfo_path):
+                # we've got task.json, so grab info from there
+                task = json_decode(open(self.taskinfo_path).read())
+            else:
+                # we don't have any info on the task :(
+                emptytask = Task()
+                emptytask.id = self.task["id"]
+                task = emptytask.to_dict()
 
         return dict(
             version=CUCKOO_VERSION,
-            started=self.task["started_on"],
-            ended=self.task.get("completed_on", "none"),
-            duration=duration,
-            id=int(self.task["id"]),
-            category=self.task["category"],
-            custom=self.task["custom"],
-            machine=self.task["machine"],
-            package=self.task["package"]
+            started=task["started_on"],
+            ended=task.get("completed_on", "none"),
+            duration=task.get("duration", -1),
+            id=int(task["id"]),
+            category=task["category"],
+            custom=task["custom"],
+            owner=task["owner"],
+            machine=task["guest"],
+            package=task["package"],
+            platform=task["platform"],
+            options=task["options"],
+            route=task["route"],
         )
+
+class MetaInfo(Processing):
+    """General information about the task and output files (memory dumps, etc)."""
+
+    def run(self):
+        """Run information gathering.
+        @return: information dict.
+        """
+        self.key = "metadata"
+
+        def reformat(x):
+            # kinda ugly absolute -> relative
+            relpath = x[len(self.analysis_path):].lstrip("/")
+
+            dirname = os.path.dirname(relpath)
+            basename = os.path.basename(relpath)
+            if not dirname: dirname = ""
+            return dict(dirname=dirname, basename=basename, sha256=File(x).get_sha256())
+
+        meta = {
+            "output": {},
+        }
+
+        if os.path.exists(self.pcap_path):
+            meta["output"]["pcap"] = reformat(self.pcap_path)
+
+        for path, key in [
+                (self.pmemory_path, "memdumps"),
+                (self.buffer_path, "buffers"),
+                (self.dropped_path, "dropped"),
+            ]:
+            if os.path.exists(path):
+                contents = os.listdir(path)
+                if contents:
+                    meta["output"][key] = [reformat(os.path.join(path, i)) for i in contents]
+
+        return meta

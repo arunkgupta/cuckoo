@@ -1,4 +1,5 @@
-# Copyright (C) 2010-2014 Cuckoo Foundation.
+# Copyright (C) 2010-2013 Claudio Guarnieri.
+# Copyright (C) 2014-2016 Cuckoo Foundation.
 # This file is part of Cuckoo Sandbox - http://www.cuckoosandbox.org
 # See the file 'docs/LICENSE' for copying permission.
 
@@ -19,20 +20,19 @@ import os
 import sys
 import sqlalchemy as sa
 
-from dateutil.parser import parse
 from datetime import datetime
+
+try:
+    from dateutil.parser import parse
+except ImportError:
+    print "Unable to import dateutil.parser",
+    print "(install with `pip install python-dateutil`)"
+    sys.exit()
 
 try:
     from alembic import op
 except ImportError:
     print "Unable to import alembic (install with `pip install alembic`)"
-    sys.exit()
-
-try:
-    from pymongo.connection import Connection
-    from pymongo.errors import ConnectionFailure
-except ImportError:
-    print "Unable to import pymongo (install with `pip install pymongo`)"
     sys.exit()
 
 sys.path.append(os.path.join("..", ".."))
@@ -258,22 +258,44 @@ def upgrade():
 def mongo_upgrade():
     """Migrate mongodb schema and data."""
     # Read reporting.conf to fetch mongo configuration.
-    config = Config(os.path.join("..", "..", "conf", "reporting.conf"))
+    config = Config(cfg=os.path.join("..", "..", "conf", "reporting.conf"))
     # Run migration only if mongo is enabled as reporting module.
     if config.mongodb.enabled:
         host = config.mongodb.get("host", "127.0.0.1")
         port = config.mongodb.get("port", 27017)
+        database = config.mongodb.get("db", "cuckoo")
         print "Mongo reporting is enabled, strarting mongo data migration."
 
-        # Connect.
+        if not port.isnumber():
+            print "Port must be an integer"
+            sys.exit()
+
+        # Support old Mongo.
         try:
+            from pymongo.connection import Connection
+            from pymongo.errors import ConnectionFailure
+
             conn = Connection(host, port)
             db = conn.cuckoo
-        except TypeError:
-            print "Mongo connection port must be integer"
-            sys.exit()
+            done = True
+        except ImportError:
+            print "Unable to import pymongo (install with `pip install pymongo`)"
+            done = False
         except ConnectionFailure:
             print "Cannot connect to MongoDB"
+            sys.exit()
+
+        try:
+            if not done:
+                import pymongo
+
+                try:
+                    db = pymongo.MongoClient(host, port)[database]
+                except pymongo.errors.ConnectionFailure:
+                    print "Cannot connect to MongoDB"
+                    sys.exit()
+        except ImportError:
+            print "Unable to import pymongo (install with `pip install pymongo`)"
             sys.exit()
 
         # Check for schema version and create it.

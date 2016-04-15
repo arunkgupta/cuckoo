@@ -6,6 +6,7 @@ Frequently Asked Questions:
 
     * :ref:`analyze_urls`
     * :ref:`general_volatility`
+    * :ref:`esxi_reqs`
     * :ref:`troubles_upgrade`
     * :ref:`troubles_problem`
 
@@ -19,6 +20,11 @@ Can I analyze URLs with Cuckoo?
 -------------------------------
 
 Yes you can. Since version 0.5 URLs are natively supported by Cuckoo.
+Additional details on how URL submissions is documented :doc:`../usage/submit.html#submission-utility`.
+
+
+    $ ./utils/submit.py --url http://www.example.com
+
 
 .. _general_volatility:
 
@@ -34,6 +40,18 @@ some rootkit-like technologies to perform its operations, the results of a foren
 analysis would be polluted by the sandbox's components.
 
 .. _`Volatility`: http://code.google.com/p/volatility/
+
+.. _esxi_reqs:
+
+What do I need to use Cuckoo with VMware ESXi?
+----------------------------------------------
+
+To run with VMware vSphere Hypervisor (or ESXi) Cuckoo leverages libvirt.
+Libivirt is currently using the VMware API to take control over virtual machines,
+though these APIs are available only in the licensed version.
+In VMware vSphere free edition, these APIs are read only, so you are unable
+to use Cuckoo with it.
+For the minimum license needed, please have a look at VMware website.
 
 Troubleshooting
 ===============
@@ -54,7 +72,7 @@ Please follow the upgrade steps described in :doc:`../installation/upgrade`.
 Cuckoo stumbles and produces some error I don't understand
 ----------------------------------------------------------
 
-Cuckoo is a young and still evolving project, it's possible that
+Cuckoo is a mature but always evolving project, it's possible that
 you encounter some problems while running it, but before you rush into
 sending emails to everyone make sure you read what follows.
 
@@ -96,13 +114,13 @@ Make sure when you ask for help to:
       setup.
     * Eventually provide a copy of the analysis that generated the problem.
 
-.. _`Community`: http://community.cuckoosandbox.org
+.. _`Community`: https://community.cuckoosandbox.org
 .. _`Google`: http://www.google.com
 
 Check and restore current snapshot with KVM
 -------------------------------------------
 
-If something goes wrong with virtual machine it's best practice to check curent snapshot
+If something goes wrong with virtual machine it's best practice to check current snapshot
 status.
 You can do that with the following::
 
@@ -115,7 +133,7 @@ snapshot is broken::
     $ virsh snapshot-current "<Name of VM>"
     error: domain '<Name of VM>' has no current snapshot
 
-To fix and create a current snapshot firt list all machine's snapshots::
+To fix and create a current snapshot first list all machine's snapshots::
 
     $ virsh snapshot-list "<Name of VM>"
      Name                 Creation Time             State
@@ -133,7 +151,7 @@ Check and restore current snapshot with VirtualBox
 --------------------------------------------------
 
 If something goes wrong with virtual it's best practice to check the virtual machine
-status and the curent snapshot.
+status and the current snapshot.
 First of all check the virtual machine status with the following::
 
     $ VBoxManage showvminfo "<Name of VM>" | grep State
@@ -147,8 +165,8 @@ If the state is "powered off" you can go ahead with the next check, if the state
 With the following check the current snapshots state::
 
     $ VBoxManage snapshot "<Name of VM>" list --details
-       Name: s1 (UUID: 90828a77-72f4-4a5e-b9d3-bb1fdd4cef5f)
-          Name: s2 (UUID: 97838e37-9ca4-4194-a041-5e9a40d6c205) *
+    Name: s1 (UUID: 90828a77-72f4-4a5e-b9d3-bb1fdd4cef5f)
+    Name: s2 (UUID: 97838e37-9ca4-4194-a041-5e9a40d6c205) *
 
 If you have a snapshot marked with a star "*" your snapshot is ready, anyway
 you have to restore the current snapshot::
@@ -169,3 +187,11 @@ with the result server IP address.
 You can bring it up manually, it depends from one virtualization software to another, but
 if you don't know how to do, a good trick is to manually start and stop an analysis virtual
 machine, this will bring virtual networking up.
+
+In the case of VirtualBox the hostonly interface `vboxnet0` can be created as follows::
+
+    # If the hostonly interface vboxnet0 does not exist already.
+    $ VBoxManage hostonlyif create
+
+    # Configure vboxnet0.
+    $ VBoxManage hostonlyif ipconfig vboxnet0 --ip 192.168.56.1 --netmask 255.255.255.0
